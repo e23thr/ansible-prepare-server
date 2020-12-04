@@ -1,2 +1,2 @@
 [dockerhosts]
-devserver.praphan.dev remote_user=phan letsencrypt_email=praphan.o@gmail.com domain_name=devserver.praphan.dev jenkins_prefix=/ci more_domains='["demo-react.praphan.dev","demo-api.praphan.dev"]'
+devserver.praphan.dev remote_user=phan letsencrypt_email=praphan.o@gmail.com domain_name=devserver.praphan.dev jenkins_prefix=/ci jenkins_resource_domain=jenkins-resource.praphan.dev more_domains='["jenkins-resource.praphan.dev","demo-react.praphan.dev","demo-api.praphan.dev"]'

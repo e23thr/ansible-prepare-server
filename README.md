@@ -1,4 +1,4 @@
-# ansible-prepare-server (specific for ubuntu 20.x @12SEP2020)
+# ansible-prepare-server (specific for ubuntu 20.x @04DEC2020)
 
 ## Prepare
 
@@ -9,6 +9,8 @@
 ```
 %sudo ALL=(ALL) NOPASSWD: ALL
 ```
+
+4. Upload your SSL to your user
 
 ## Documents
 
@@ -23,3 +25,14 @@
 ```
 % ansible-playbook prepare-server.yml -i inventory
 ```
+
+## Inventory file
+
+| parameter                   | description                                                       |
+| --------------------------- | ----------------------------------------------------------------- |
+| **remote_user**             | normal user to be use as sudoers                                  |
+| **letsencrypt_email**       | email to create let's encrypt certificate                         |
+| **domain_name**             | main domain name for this server                                  |
+| **jenkins_prefix**          | uri prefix for jenkins                                            |
+| **jenkins_resource_domain** | resource domain for jenkins                                       |
+| **more_domains**            | list of domains that can be configure with virtual host and https |

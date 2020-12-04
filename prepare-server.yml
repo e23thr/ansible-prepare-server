@@ -106,6 +106,10 @@
         regexp: '^JENKINS_ARGS="--(.*)'
         line: JENKINS_ARGS=" --prefix={{ jenkins_prefix }} \g<1>
         backrefs: yes
+    - name: config jenkins resource sub-domain
+      template:
+        src: jenkins.security.ResourceDomainConfiguration.xml.j2
+        dest: /var/lib/jenkins/jenkins.security.ResourceDomainConfiguration.xml
     - name: restart jenkins for new config
       service:
         name: jenkins
@@ -123,33 +127,54 @@
       template:
         src: nginx-conf.j2
         dest: /etc/nginx/nginx.conf
-    - name: Install nginx site for letsencrypt requests
+    - name: Install nginx site for letsencrypt requests - {{ domain_name }}
       template:
         src: nginx-http.j2
         dest: /etc/nginx/sites-enabled/{{ domain_name }}
-    - name: Reload nginx to activate letsencrypt site
-      service:
-        name: nginx
-        state: restarted
-    - name: Create letsencrypt certificate
+    - name: Create letsencrypt certificate - {{ domain_name }}
       shell: letsencrypt certonly -n --webroot -w /var/www/letsencrypt -m {{ letsencrypt_email }} --agree-tos -d {{ domain_name }}
       args:
         creates: /etc/letsencrypt/live/{{ domain_name }}
+    - name: Install nginx site for letsencrypt requests - {{ domain_name }}
+      template:
+        src: nginx-http.j2
+        dest: /etc/nginx/sites-enabled/{{ domain_name }}
+    - name: Create letsencrypt certificate - {{ domain_name }}
+      shell: letsencrypt certonly -n --webroot -w /var/www/letsencrypt -m {{ letsencrypt_email }} --agree-tos -d {{ domain_name }}
+      args:
+        creates: /etc/letsencrypt/live/{{ domain_name }}
+
+    - name: Create letsencrypt certificate for more_domains
+      shell: letsencrypt certonly -n --webroot -w /var/www/letsencrypt -m {{ letsencrypt_email }} --agree-tos -d {{ item }}
+      args:
+        creates: /etc/letsencrypt/live/{{ item }}
+      loop: "{{ more_domains|flatten }}"
     - name: Generate dhparams
       shell: openssl dhparam -out /etc/nginx/dhparams.pem 2048
       args:
         creates: /etc/nginx/dhparams.pem
-    - name: Install nginx site for specified site
+    - name: Copy config - nginx site for specified site
       template:
         src: nginx-https.j2
         dest: /etc/nginx/sites-enabled/{{ domain_name }}-https
+      loop: "{{ more_domains|flatten }}"
+    - name: Copy config - nginx sites for more_domains (http)
+      template:
+        src: "{{ item }}-http.j2"
+        dest: "/etc/nginx/sites-enabled/{{ item }}-http"
+      loop: "{{ more_domains|flatten }}"
+    - name: Copy config - nginx sites for more_domains (https)
+      template:
+        src: "{{ item }}-https.j2"
+        dest: "/etc/nginx/sites-enabled/{{ item }}-https"
+      loop: "{{ more_domains|flatten }}"
     - name: Reload nginx to activate specified site
       service: name=nginx state=restarted
     - name: Add letsencrypt cronjob for cert renewal
       cron:
         name: letsencrypt_renewal
         special_time: weekly
-        job: letsencrypt --renew certonly -n --webroot -w /var/www/letsencrypt -m {{ letsencrypt_email }} --agree-tos -d {{ domain_name }} && service nginx reload
+        job: letsencrypt --renew certonly -n --webroot -w /var/www/letsencrypt -m {{ letsencrypt_email }} --agree-tos -d {{ domain_name }} {{ (['-d '] * more_domains|length)|zip(more_domains)|map('join')|join(' ')  }} && service nginx reload
 
     - name: Reading default jenkins default password
       command: "cat /var/lib/jenkins/secrets/initialAdminPassword"
@@ -159,7 +184,11 @@
       debug:
         msg: "{{jenkins_default_password.stdout}}"
       ignore_errors: True
-    - name: with_flattened -> loop
+    - name: test display
       debug:
-        msg: "{{ item }}"
-      loop: "{{ more_domains|flatten }}"
+        # msg: "{{ more_domains | map('regex_replace', '(.*)', '-d \\1') | map('join') }}"
+        msg: "{{ (['-d '] * more_domains|length)|zip(more_domains)|map('join')|join(' ')  }}"
+    # - name: with_flattened -> loop
+    #   debug:
+    #     msg: "{{ item }}"
+    #   loop: "{{ more_domains|flatten }}"

@@ -4,12 +4,7 @@ add_header X-XSS-Protection "1; mode=block";
 add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.google-analytics.com; img-src 'self' data: https://www.google-analytics.com; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'";
 #add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.google-analytics.com; img-src 'self' data: https://www.google-analytics.com; style-src 'self' 'unsafe-inline'; font-src 'self'; frame-src 'self'; object-src 'none'";
 
-upstream jenkins {
-    keepalive 32; # keepalive connections
-    server 127.0.0.1:8080; # jenkins ip and port
-}
-
-# Required for Jenkins websocket agents
+# Required for websocket agents
 map $http_upgrade $connection_upgrade {
         default upgrade;
         '' close;
@@ -18,7 +13,7 @@ map $http_upgrade $connection_upgrade {
 # HTTPS server
 #
 server {
-    listen 443 ssl default deferred;
+    listen 443;
     server_name {{ item }};
 
     ssl on;
