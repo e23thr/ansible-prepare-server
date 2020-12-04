@@ -1,0 +1,143 @@
+---
+- name: install docker on ubuntu
+  hosts: dockerhosts
+  remote_user: phan
+  become: yes
+  become_method: sudo
+  become_user: root
+
+  tasks:
+    - name: update packages
+      apt: update_cache=yes # force_apt_get=yes cache_valid_time=3600
+    - name: upgrade all packages
+      apt: upgrade=dist # force_apt_get=yes
+    - name: install required system packages
+      apt: name={{ item }} state=latest update_cache=yes #force_apt_get=yes
+      loop:
+        [
+          "apt-transport-https",
+          "ca-certificates",
+          "curl",
+          "software-properties-common",
+          "python3-pip",
+          "virtualenv",
+          "python3-setuptools",
+          "python-simplejson",
+        ]
+    - name: Add Docker GPG apt Key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker Repository
+      apt_repository:
+        repo: deb https://download.docker.com/linux/ubuntu bionic stable
+        state: present
+
+    - name: Update apt and install docker-ce
+      apt: update_cache=yes name=docker-ce state=latest
+
+    - name: create docker group
+      group: name=docker state=present
+
+    - name: user 'phan' join docker group
+      user:
+        name: phan
+        groups: admin,docker
+    # This repo does not support ubuntu 20.x currently
+    # - name: add certbot repository
+    #   apt_repository:
+    #     repo: ppa:certbot/certbot
+    #     state: present
+    #     update_cache: yes
+    #     validate_certs: False
+
+    - name: install letsencrypt, certbot and nginx
+      apt: name={{ item }} state=latest #force_apt_get=yes
+      # loop: ["nginx", "python3-certbot-nginx"]
+      loop:
+        [
+          "letsencrypt",
+          "certbot",
+          "nginx",
+          "python3",
+          "python3-certbot",
+          "python-certbot-doc",
+          "python3-certbot-nginx",
+          "openjdk-8-jdk",
+          "wget",
+        ]
+
+    - name: install docker-compose
+      get_url:
+        url: https://github.com/docker/compose/releases/download/1.25.1/docker-compose-Linux-x86_64
+        dest: /usr/local/bin/docker-compose
+        mode: "u+x,g+x"
+
+    - name: test docker
+      raw: docker run --rm hello-world
+
+    - name: remove hello-world image from docker
+      raw: docker rmi hello-world
+
+    # Install Jenkins
+    - name: Create jenkins_home in host
+      file:
+        name: /var/jenkins_home
+        state: directory
+    - name: install jenkins key
+      raw: wget -q -O - https://pkg.jenkins.io/debian-stable/jenkins.io.key | sudo apt-key add -
+    - name: copy jenkins pkg to apt
+      template:
+        src: jenkins.list
+        dest: /etc/apt/sources.list.d/jenkins.list
+    - name: update packages
+      apt: update_cache=yes # force_apt_get=yes cache_valid_time=3600
+    - name: pause for 5 seconds
+      pause:
+        seconds: 5
+    - name: install jenkins from package
+      apt:
+        name: jenkins
+        state: latest
+
+    # config letsencrypt + nginx
+    - name: create letsencrypt directory
+      file:
+        name: /var/www/letsencrypt
+        state: directory
+    - name: Remove default nginx config
+      file:
+        name: /etc/nginx/sites-enabled/default
+        state: absent
+    - name: Install system nginx config
+      template:
+        src: nginx-conf.j2
+        dest: /etc/nginx/nginx.conf
+    - name: Install nginx site for letsencrypt requests
+      template:
+        src: nginx-http.j2
+        dest: /etc/nginx/sites-enabled/{{ domain_name }}
+    - name: Reload nginx to activate letsencrypt site
+      service:
+        name: nginx
+        state: restarted
+    - name: Create letsencrypt certificate
+      shell: letsencrypt certonly -n --webroot -w /var/www/letsencrypt -m {{ letsencrypt_email }} --agree-tos -d {{ domain_name }}
+      args:
+        creates: /etc/letsencrypt/live/{{ domain_name }}
+    - name: Generate dhparams
+      shell: openssl dhparam -out /etc/nginx/dhparams.pem 2048
+      args:
+        creates: /etc/nginx/dhparams.pem
+    - name: Install nginx site for specified site
+      template:
+        src: nginx-le.j2
+        dest: /etc/nginx/sites-enabled/le
+    - name: Reload nginx to activate specified site
+      service: name=nginx state=restarted
+    - name: Add letsencrypt cronjob for cert renewal
+      cron:
+        name: letsencrypt_renewal
+        special_time: weekly
+        job: letsencrypt --renew certonly -n --webroot -w /var/www/letsencrypt -m {{ letsencrypt_email }} --agree-tos -d {{ domain_name }} && service nginx reload

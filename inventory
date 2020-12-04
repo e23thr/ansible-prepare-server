@@ -1,0 +1,2 @@
+[dockerhosts]
+devserver.praphan.dev letsencrypt_email=praphan.o@gmail.com domain_name=devserver.praphan.dev jenkins_prefix=/ci
