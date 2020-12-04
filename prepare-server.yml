@@ -107,7 +107,8 @@
         line: JENKINS_ARGS=" --prefix={{ jenkins_prefix }} \g<1>
         backrefs: yes
     - name: restart jenkins for new config
-        service: jenkins
+      service:
+        name: jenkins
         state: restarted
     # config letsencrypt + nginx
     - name: create letsencrypt directory
@@ -140,7 +141,7 @@
         creates: /etc/nginx/dhparams.pem
     - name: Install nginx site for specified site
       template:
-        src: nginx-le.j2
+        src: nginx-https.j2
         dest: /etc/nginx/sites-enabled/{{ domain_name }}-https
     - name: Reload nginx to activate specified site
       service: name=nginx state=restarted
@@ -153,6 +154,12 @@
     - name: Reading default jenkins default password
       command: "cat /var/lib/jenkins/secrets/initialAdminPassword"
       register: jenkins_default_password
+      ignore_errors: True
     - name: Display jenkins default password
       debug:
         msg: "{{jenkins_default_password.stdout}}"
+      ignore_errors: True
+    - name: with_flattened -> loop
+      debug:
+        msg: "{{ item }}"
+      loop: "{{ more_domains|flatten }}"
