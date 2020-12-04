@@ -1,7 +1,7 @@
 ---
 - name: install docker on ubuntu
   hosts: dockerhosts
-  remote_user: phan
+  remote_user: "{{ remote_user }}"
   become: yes
   become_method: sudo
   become_user: root
@@ -100,7 +100,15 @@
       apt:
         name: jenkins
         state: latest
-
+    - name: change jenkins sub-dir to {{ jenkins_prefix }}
+      lineinfile:
+        path: /etc/default/jenkins
+        regexp: '^JENKINS_ARGS="--(.*)'
+        line: JENKINS_ARGS=" --prefix={{ jenkins_prefix }} \g<1>
+        backrefs: yes
+    - name: restart jenkins for new config
+        service: jenkins
+        state: restarted
     # config letsencrypt + nginx
     - name: create letsencrypt directory
       file:
@@ -133,7 +141,7 @@
     - name: Install nginx site for specified site
       template:
         src: nginx-le.j2
-        dest: /etc/nginx/sites-enabled/le
+        dest: /etc/nginx/sites-enabled/{{ domain_name }}-https
     - name: Reload nginx to activate specified site
       service: name=nginx state=restarted
     - name: Add letsencrypt cronjob for cert renewal
@@ -141,3 +149,10 @@
         name: letsencrypt_renewal
         special_time: weekly
         job: letsencrypt --renew certonly -n --webroot -w /var/www/letsencrypt -m {{ letsencrypt_email }} --agree-tos -d {{ domain_name }} && service nginx reload
+
+    - name: Reading default jenkins default password
+      command: "cat /var/lib/jenkins/secrets/initialAdminPassword"
+      register: jenkins_default_password
+    - name: Display jenkins default password
+      debug:
+        msg: "{{jenkins_default_password.stdout}}"
