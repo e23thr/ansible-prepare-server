@@ -26,6 +26,8 @@
 % ansible-playbook prepare-server.yml -i inventory
 ```
 
+---
+
 ## Inventory file
 
 | parameter                   | description                                                       |
@@ -36,3 +38,12 @@
 | **jenkins_prefix**          | uri prefix for jenkins                                            |
 | **jenkins_resource_domain** | resource domain for jenkins                                       |
 | **more_domains**            | list of domains that can be configure with virtual host and https |
+
+---
+
+## Useful command
+
+| command                                        | description                          |
+| ---------------------------------------------- | ------------------------------------ |
+| sudo timedatectl list-timezones                | List time zones                      |
+| sudo timedatectl set-timezone <your_time_zone> | set system timezone ie. Asia/Bangkok |
