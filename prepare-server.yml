@@ -1,16 +1,38 @@
 ---
-- name: install docker on ubuntu
+- name: install docker, jenkins, letsencrypt on ubuntu
   hosts: dockerhosts
-  remote_user: "{{ remote_user }}"
-  become: yes
-  become_method: sudo
-  become_user: root
+  # remote_user: "{{ remote_user }}"
+  remote_user: root
+  #  become: yes
+  # become_method: sudo
+  # become_user: root
 
   tasks:
+    # Jenkins
+    - name: install jenkins key
+      raw: wget -q -O - https://pkg.jenkins.io/debian-stable/jenkins.io.key | sudo apt-key add -
+    - name: copy jenkins.list to sources.list.d
+      template:
+        src: jenkins.list
+        dest: /etc/apt/sources.list.d/jenkins.list
+    # Docker
+    - name: Add Docker GPG apt Key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker Repository
+      apt_repository:
+        repo: deb https://download.docker.com/linux/ubuntu bionic stable
+        state: present
+
+    # Update packages
     - name: update packages
       apt: update_cache=yes # force_apt_get=yes cache_valid_time=3600
+    # Upgrade packages
     - name: upgrade all packages
       apt: upgrade=dist # force_apt_get=yes
+    # Install required packages
     - name: install required system packages
       apt: name={{ item }} state=latest update_cache=yes #force_apt_get=yes
       loop:
@@ -23,40 +45,6 @@
           "virtualenv",
           "python3-setuptools",
           "python-simplejson",
-        ]
-    - name: Add Docker GPG apt Key
-      apt_key:
-        url: https://download.docker.com/linux/ubuntu/gpg
-        state: present
-
-    - name: Add Docker Repository
-      apt_repository:
-        repo: deb https://download.docker.com/linux/ubuntu bionic stable
-        state: present
-
-    - name: Update apt and install docker-ce
-      apt: update_cache=yes name=docker-ce state=latest
-
-    - name: create docker group
-      group: name=docker state=present
-
-    - name: user 'phan' join docker group
-      user:
-        name: phan
-        groups: admin,docker
-    # This repo does not support ubuntu 20.x currently
-    # - name: add certbot repository
-    #   apt_repository:
-    #     repo: ppa:certbot/certbot
-    #     state: present
-    #     update_cache: yes
-    #     validate_certs: False
-
-    - name: install letsencrypt, certbot and nginx
-      apt: name={{ item }} state=latest #force_apt_get=yes
-      # loop: ["nginx", "python3-certbot-nginx"]
-      loop:
-        [
           "letsencrypt",
           "certbot",
           "nginx",
@@ -64,9 +52,27 @@
           "python3-certbot",
           "python-certbot-doc",
           "python3-certbot-nginx",
+          "python3-venv",
           "openjdk-8-jdk",
           "wget",
+          "jenkins",
+          "docker-ce",
         ]
+
+    - name: create docker group
+      group: name=docker state=present
+
+    # - name: user 'phan' join docker group
+    #   user:
+    #     name: phan
+    #     groups: admin,docker
+    # This repo does not support ubuntu 20.x currently
+    # - name: add certbot repository
+    #   apt_repository:
+    #     repo: ppa:certbot/certbot
+    #     state: present
+    #     update_cache: yes
+    #     validate_certs: False
 
     - name: install docker-compose
       get_url:
@@ -80,101 +86,72 @@
     - name: remove hello-world image from docker
       raw: docker rmi hello-world
 
-    # Install Jenkins
-    - name: Create jenkins_home in host
-      file:
-        name: /var/jenkins_home
-        state: directory
-    - name: install jenkins key
-      raw: wget -q -O - https://pkg.jenkins.io/debian-stable/jenkins.io.key | sudo apt-key add -
-    - name: copy jenkins pkg to apt
-      template:
-        src: jenkins.list
-        dest: /etc/apt/sources.list.d/jenkins.list
-    - name: update packages
-      apt: update_cache=yes # force_apt_get=yes cache_valid_time=3600
-    - name: pause for 5 seconds
-      pause:
-        seconds: 5
-    - name: install jenkins from package
-      apt:
+    - name: user 'jenkins' join docker group
+      user:
         name: jenkins
-        state: latest
-    - name: change jenkins sub-dir to {{ jenkins_prefix }}
-      lineinfile:
-        path: /etc/default/jenkins
-        regexp: '^JENKINS_ARGS="--(.*)'
-        line: JENKINS_ARGS=" --prefix={{ jenkins_prefix }} \g<1>
-        backrefs: yes
-    - name: config jenkins resource sub-domain
-      template:
-        src: jenkins.security.ResourceDomainConfiguration.xml.j2
-        dest: /var/lib/jenkins/jenkins.security.ResourceDomainConfiguration.xml
+        groups: docker
+
+    # Jenkins
     - name: restart jenkins for new config
       service:
         name: jenkins
         state: restarted
+
     # config letsencrypt + nginx
     - name: create letsencrypt directory
       file:
         name: /var/www/letsencrypt
         state: directory
+
     - name: Remove default nginx config
       file:
         name: /etc/nginx/sites-enabled/default
         state: absent
+
     - name: Install system nginx config
       template:
         src: nginx-conf.j2
         dest: /etc/nginx/nginx.conf
-    - name: Install nginx site for letsencrypt requests - {{ domain_name }}
-      template:
-        src: nginx-http.j2
-        dest: /etc/nginx/sites-enabled/{{ domain_name }}
-    - name: Create letsencrypt certificate - {{ domain_name }}
-      shell: letsencrypt certonly -n --webroot -w /var/www/letsencrypt -m {{ letsencrypt_email }} --agree-tos -d {{ domain_name }}
-      args:
-        creates: /etc/letsencrypt/live/{{ domain_name }}
-    - name: Install nginx site for letsencrypt requests - {{ domain_name }}
-      template:
-        src: nginx-http.j2
-        dest: /etc/nginx/sites-enabled/{{ domain_name }}
-    - name: Create letsencrypt certificate - {{ domain_name }}
-      shell: letsencrypt certonly -n --webroot -w /var/www/letsencrypt -m {{ letsencrypt_email }} --agree-tos -d {{ domain_name }}
-      args:
-        creates: /etc/letsencrypt/live/{{ domain_name }}
 
-    - name: Create letsencrypt certificate for more_domains
+    - name: Install default site for letsencrypt process
+      template:
+        src: nginx-http-pre.j2
+        dest: /etc/nginx/sites-enabled/default
+
+    - name: Reload nginx config
+      service: name=nginx state=restarted
+
+    - name: Create letsencrypt certificate for ssl_domains {{ item }}
       shell: letsencrypt certonly -n --webroot -w /var/www/letsencrypt -m {{ letsencrypt_email }} --agree-tos -d {{ item }}
       args:
         creates: /etc/letsencrypt/live/{{ item }}
-      loop: "{{ more_domains|flatten }}"
+      loop: "{{ ssl_domains|flatten }}"
+
     - name: Generate dhparams
       shell: openssl dhparam -out /etc/nginx/dhparams.pem 2048
       args:
         creates: /etc/nginx/dhparams.pem
-    - name: Copy config - nginx site for specified site
-      template:
-        src: nginx-https.j2
-        dest: /etc/nginx/sites-enabled/{{ domain_name }}-https
-      loop: "{{ more_domains|flatten }}"
-    - name: Copy config - nginx sites for more_domains (http)
+
+    - name: Copy config - nginx sites for ssl_domains (http) - {{ item }}
       template:
         src: "{{ item }}-http.j2"
         dest: "/etc/nginx/sites-enabled/{{ item }}-http"
-      loop: "{{ more_domains|flatten }}"
-    - name: Copy config - nginx sites for more_domains (https)
+      loop: "{{ ssl_domains|flatten }}"
+
+    - name: Copy config - nginx sites for ssl_domains (https) - {{ item }}
       template:
         src: "{{ item }}-https.j2"
         dest: "/etc/nginx/sites-enabled/{{ item }}-https"
-      loop: "{{ more_domains|flatten }}"
+      loop: "{{ ssl_domains|flatten }}"
+
     - name: Reload nginx to activate specified site
       service: name=nginx state=restarted
+
     - name: Add letsencrypt cronjob for cert renewal
       cron:
         name: letsencrypt_renewal
         special_time: weekly
-        job: letsencrypt --renew certonly -n --webroot -w /var/www/letsencrypt -m {{ letsencrypt_email }} --agree-tos -d {{ domain_name }} {{ (['-d '] * more_domains|length)|zip(more_domains)|map('join')|join(' ')  }} && service nginx reload
+        job: letsencrypt --renew certonly -n --webroot -w /var/www/letsencrypt -m {{ letsencrypt_email }} --agree-tos {{ (['-d '] * ssl_domains|length)|zip(ssl_domains)|map('join')|join(' ')  }} && service nginx reload
 
     - name: Reading default jenkins default password
       command: "cat /var/lib/jenkins/secrets/initialAdminPassword"
@@ -186,9 +163,12 @@
       ignore_errors: True
     - name: test display
       debug:
-        # msg: "{{ more_domains | map('regex_replace', '(.*)', '-d \\1') | map('join') }}"
-        msg: "{{ (['-d '] * more_domains|length)|zip(more_domains)|map('join')|join(' ')  }}"
+        # msg: "{{ ssl_domains | map('regex_replace', '(.*)', '-d \\1') | map('join') }}"
+        msg: "{{ (['-d '] * ssl_domains|length)|zip(ssl_domains)|map('join')|join(' ')  }}"
+    - name: Restart server
+      reboot:
+        reboot_timeout: 3600
     # - name: with_flattened -> loop
     #   debug:
     #     msg: "{{ item }}"
-    #   loop: "{{ more_domains|flatten }}"
+    #   loop: "{{ ssl_domains|flatten }}"
